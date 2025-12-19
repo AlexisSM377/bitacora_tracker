@@ -492,11 +492,11 @@
               </div>
             </div>
 
-            <div class="text-sm text-gray-600 mb-4">
+            <!-- <div class="text-sm text-gray-600 mb-4">
               <span id="incf-status"
                 >Filtro actual: selected · Fecha seleccionada (arriba): -</span
               >
-            </div>
+            </div> -->
           </div>
 
           <div id="informe-container" class="overflow-x-auto">
@@ -1224,6 +1224,18 @@
           dateInput.value = dates[0] || dayjs().format("YYYY-MM-DD");
         }
         filterByDate();
+
+        // Cargar/mezclar seguimiento desde BD (no bloquea la UI)
+        try {
+          loadSeguimientosFromDb()
+            .then(() => {
+              // Reaplicar filtro y re-render para que la matriz refleje BD
+              filterByDate();
+            })
+            .catch((e) => {
+              console.warn("No se pudieron cargar seguimientos desde BD", e);
+            });
+        } catch (e) {}
       }
 
       function saveAllData() {
@@ -1244,6 +1256,10 @@
             (d) => d.fechaProgramada === selectedDate
           );
         }
+        // Si ya cargamos seguimientos desde BD, aplicarlos a la vista actual.
+        try {
+          applySeguimientosDbToArray(filteredDespachosData);
+        } catch (e) {}
         renderAllTabs();
       }
 
@@ -1882,6 +1898,11 @@
         renderAllTabs();
         document.getElementById("unidad-selector").value = String(index);
         renderSeguimientoForm(index);
+
+        // Guardar también en BD
+        saveSeguimientoToDb(filteredDespachosData[index]).catch((err) => {
+          console.error("Error guardando seguimiento en BD", err);
+        });
       }
 
       /* ===========================
@@ -1906,6 +1927,214 @@
         unidades.forEach((u) => {
           sel.innerHTML += `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`;
         });
+      }
+
+      /* ===========================
+   Seguimiento en BD (MySQL)
+=========================== */
+      const SEGUIMIENTO_SAVE_ENDPOINT = "seguimiento/guardar_seguimiento.php";
+      const SEGUIMIENTO_LOAD_ENDPOINT = "seguimiento/obtener_seguimiento.php";
+
+      let seguimientosDbCache = {
+        loaded: false,
+        map: new Map(),
+      };
+
+      function makeSeguimientoKey(folio, unidad, fechaProgramada) {
+        return `${String(folio ?? "").trim()}|${String(unidad ?? "").trim()}|${String(
+          fechaProgramada ?? ""
+        ).trim()}`;
+      }
+
+      function parseIncidenciasFromDbString(raw) {
+        const s = (raw ?? "").toString().trim();
+        if (!s) return [];
+        return s
+          .split(";;")
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .map((part) => {
+            const pieces = part.split(" | ");
+            const tipo = (pieces[0] ?? "").trim();
+            const severidad = (pieces[1] ?? "").trim();
+            const fecha = (pieces[2] ?? "").trim();
+            return { tipo, severidad, fecha };
+          })
+          .filter((x) => x.tipo);
+      }
+
+      function normalizeSeguimientoDbRow(r) {
+        const folio = r?.folio ?? "";
+        const unidad = r?.unidad ?? "";
+        const fechaProgramada = r?.fecha_programada ?? "";
+        return {
+          key: makeSeguimientoKey(folio, unidad, fechaProgramada),
+          folio,
+          unidad,
+          fechaProgramada,
+
+          operadorMonitoreoId: r?.operador_monitoreo ?? "",
+          gpsValidacionEstado: r?.gps_estado ?? "",
+          gpsValidacionTimestamp: r?.gps_timestamp ?? "",
+
+          realSalidaUnidad: r?.real_salida_unidad ?? "",
+          realCarga: r?.real_carga ?? "",
+          realSalida: r?.real_salida ?? "",
+          realDescarga: r?.real_descarga ?? "",
+
+          confirmacionEntrega:
+            r?.confirmacion_entrega === null ||
+            typeof r?.confirmacion_entrega === "undefined"
+              ? null
+              : String(r.confirmacion_entrega),
+          estatus: r?.estatus ?? "",
+          observaciones: r?.observaciones ?? "",
+          incidencias: parseIncidenciasFromDbString(r?.incidencias),
+        };
+      }
+
+      function applySeguimientosDbToArray(arr) {
+        if (!seguimientosDbCache.loaded || !arr?.length) return;
+        arr.forEach((d) => {
+          const key = makeSeguimientoKey(d.folio, d.unidad, d.fechaProgramada);
+          const s = seguimientosDbCache.map.get(key);
+          if (!s) return;
+          // BD sobreescribe campos de seguimiento
+          d.operadorMonitoreoId =
+            s.operadorMonitoreoId || d.operadorMonitoreoId;
+          d.gpsValidacionEstado =
+            s.gpsValidacionEstado || d.gpsValidacionEstado;
+          d.gpsValidacionTimestamp =
+            s.gpsValidacionTimestamp || d.gpsValidacionTimestamp;
+
+          d.realSalidaUnidad = s.realSalidaUnidad || d.realSalidaUnidad;
+          d.realCarga = s.realCarga || d.realCarga;
+          d.realSalida = s.realSalida || d.realSalida;
+          d.realDescarga = s.realDescarga || d.realDescarga;
+
+          if (s.confirmacionEntrega !== null)
+            d.confirmacionEntrega = s.confirmacionEntrega;
+          d.estatus = s.estatus || d.estatus;
+          d.observaciones =
+            typeof s.observaciones === "string" && s.observaciones.trim()
+              ? s.observaciones
+              : d.observaciones;
+
+          if (Array.isArray(s.incidencias) && s.incidencias.length)
+            d.incidencias = s.incidencias;
+        });
+      }
+
+      async function loadSeguimientosFromDb() {
+        const res = await fetch(
+          `${SEGUIMIENTO_LOAD_ENDPOINT}?_=${Date.now()}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+        let json = null;
+        try {
+          json = await res.clone().json();
+        } catch (_) {
+          json = null;
+        }
+
+        if (!res.ok) {
+          const msg = json?.message
+            ? String(json.message)
+            : `HTTP ${res.status}`;
+          throw new Error(msg);
+        }
+
+        if (!json) json = await res.json();
+        const rows = Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json)
+            ? json
+            : [];
+
+        const m = new Map();
+        rows.forEach((r) => {
+          const s = normalizeSeguimientoDbRow(r);
+          if (s.key) m.set(s.key, s);
+        });
+
+        seguimientosDbCache.map = m;
+        seguimientosDbCache.loaded = true;
+        // Aplicar a los datos actuales
+        applySeguimientosDbToArray(allDespachosData);
+        applySeguimientosDbToArray(filteredDespachosData);
+      }
+
+      async function saveSeguimientoToDb(d) {
+        const payload = {
+          folio: d.folio,
+          unidad: d.unidad,
+          fechaProgramada: d.fechaProgramada,
+          operadorMonitoreoId: d.operadorMonitoreoId || "",
+          gpsValidacionEstado: d.gpsValidacionEstado || "",
+          gpsValidacionTimestamp: d.gpsValidacionTimestamp || "",
+          realSalidaUnidad: d.realSalidaUnidad || "",
+          realCarga: d.realCarga || "",
+          realSalida: d.realSalida || "",
+          realDescarga: d.realDescarga || "",
+          confirmacionEntrega: d.confirmacionEntrega,
+          estatus: d.estatus || "",
+          observaciones: d.observaciones || "",
+          incidencias: Array.isArray(d.incidencias) ? d.incidencias : [],
+        };
+
+        const res = await fetch(
+          `${SEGUIMIENTO_SAVE_ENDPOINT}?_=${Date.now()}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        let json = null;
+        try {
+          json = await res.clone().json();
+        } catch (_) {
+          json = null;
+        }
+
+        if (!res.ok || json?.success !== true) {
+          const msg = json?.message
+            ? String(json.message)
+            : `HTTP ${res.status}`;
+          throw new Error(msg);
+        }
+
+        // Actualizar cache local inmediatamente
+        const key = makeSeguimientoKey(d.folio, d.unidad, d.fechaProgramada);
+        seguimientosDbCache.map.set(key, {
+          key,
+          folio: d.folio,
+          unidad: d.unidad,
+          fechaProgramada: d.fechaProgramada,
+          operadorMonitoreoId: d.operadorMonitoreoId || "",
+          gpsValidacionEstado: d.gpsValidacionEstado || "",
+          gpsValidacionTimestamp: d.gpsValidacionTimestamp || "",
+          realSalidaUnidad: d.realSalidaUnidad || "",
+          realCarga: d.realCarga || "",
+          realSalida: d.realSalida || "",
+          realDescarga: d.realDescarga || "",
+          confirmacionEntrega: d.confirmacionEntrega,
+          estatus: d.estatus || "",
+          observaciones: d.observaciones || "",
+          incidencias: Array.isArray(d.incidencias) ? d.incidencias : [],
+        });
+        seguimientosDbCache.loaded = true;
+
+        // Re-render matriz/KPIs con lo más nuevo
+        renderRegistroDespacho();
+        renderKPIs(filteredDespachosData);
+        renderIncidenciasExecutiveReport();
+
+        return json;
       }
 
       function renderRegistroDespacho() {
@@ -2591,7 +2820,7 @@
         if (toEl) toEl.value = "";
 
         updateIncExecutiveFilterButtons();
-        renderIncidenciasExecutiveReport();
+        renderExecutiveReport();
       }
 
       function applyIncExecutiveRange() {
@@ -2610,7 +2839,7 @@
         incExecutiveFilter.to = to;
 
         updateIncExecutiveFilterButtons();
-        renderIncidenciasExecutiveReport();
+        renderExecutiveReport();
       }
 
       function updateIncExecutiveFilterButtons() {
@@ -2706,6 +2935,13 @@
         return filteredDespachosData.slice();
       }
 
+      function renderExecutiveReport() {
+        // En la pestaña "Informe Ejecutivo", el filtro aplica tanto a despachos como a incidencias
+        const data = getIncExecutiveDataByFilter();
+        renderInforme(data);
+        renderIncidenciasExecutiveReport();
+      }
+
       function renderIncidenciasExecutiveReport() {
         const tbody = document.getElementById("incidencias-exec-tbody");
         const status = document.getElementById("incf-status");
@@ -2735,7 +2971,7 @@
 
             let fechaFmt = "-";
             if (fechaIso && dayjs(fechaIso).isValid())
-              fechaFmt = dayjs(fechaIso).format("DD/MM/YYYY");
+              fechaFmt = dayjs(fechaIso).format("DD/MM/YYYY HH:mm");
             else if (d.fechaProgramada && dayjs(d.fechaProgramada).isValid())
               fechaFmt = dayjs(d.fechaProgramada).format("DD/MM/YYYY");
 
