@@ -1,0 +1,107 @@
+[
+    {
+        "folio": 1,
+        "fechaProgramada": "2025-08-15",
+        "unidad": "CR-06",
+        "placas": "16BH8N",
+        "operador": "José Guadalupe Mateos López",
+        "telefono": "771 334 8499",
+        "ruta": "TUX-PUE",
+        "origen": "Terminal Internacional de Fluidos de Tuxpan TIFT",
+        "destino": "Energéticos Nieto",
+        "citaSalidaUnidad": "2025-06-21T18:00:00.000Z",
+        "citaCarga": "2025-08-16T03:00:00.000Z",
+        "citaSalida": "2025-06-21T08:55:00.000Z",
+        "citaDescarga": "2025-08-16T20:00:00.000Z",
+        "realSalidaUnidad": "2025-12-19 12:09:00",
+        "realCarga": "2025-12-19 12:09:00",
+        "realSalida": "2025-12-19 12:09:00",
+        "realDescarga": "2025-12-19 12:09:00",
+        "confirmacionEntrega": "SI",
+        "estatus": "Despacho realizado",
+        "incidencias": [
+            {
+                "tipo": "Ponchadura de llantas",
+                "severidad": "Naranja",
+                "fecha": "2025-12-19 18:09:40"
+            },
+            {
+                "tipo": "Mala actitud del Operador",
+                "severidad": "Verde",
+                "fecha": "2025-12-22 14:25:39"
+            },
+            {
+                "tipo": "Robo o asalto",
+                "severidad": "Rojo",
+                "fecha": "2025-12-22 14:25:47"
+            }
+        ],
+        "observaciones": "prubea",
+        "operadorMonitoreoId": "GEO-01",
+        "gpsValidacionEstado": "Operativo",
+        "gpsValidacionTimestamp": "2025-12-19 18:09:19"
+    },
+    {
+        "folio": 2,
+        "fechaProgramada": "2025-08-15",
+        "unidad": "CR-13",
+        "placas": "30BG5V",
+        "operador": "Emilio Eduardo Hernández Yáñez",
+        "telefono": "773 314 4884",
+        "ruta": "TUX-CDMX",
+        "origen": "Terminal Internacional de Fluidos de Tuxpan TIFT",
+        "destino": "José Guadalupe López Velarde 4386",
+        "citaSalidaUnidad": "2025-06-22T18:00:00.000Z",
+        "citaCarga": "2025-08-16T03:00:00.000Z",
+        "citaSalida": "2025-06-22T08:55:00.000Z",
+        "citaDescarga": "2025-08-16T20:00:00.000Z",
+        "realSalidaUnidad": "",
+        "realCarga": "",
+        "realSalida": "",
+        "realDescarga": "",
+        "confirmacionEntrega": null,
+        "estatus": "Programado",
+        "incidencias": [],
+        "observaciones": "",
+        "operadorMonitoreoId": "",
+        "gpsValidacionEstado": "",
+        "gpsValidacionTimestamp": ""
+    },
+    {
+        "folio": 3,
+        "fechaProgramada": "2025-08-15",
+        "unidad": "CR-09",
+        "placas": "62AR7E",
+        "operador": "Iván Silvestre Rodríguez",
+        "telefono": "55 4348 0931",
+        "ruta": "VAL TIZ-CUA",
+        "origen": "TPVM",
+        "destino": "Energéticos Nieto",
+        "citaSalidaUnidad": "2025-06-23T18:00:00.000Z",
+        "citaCarga": "2025-08-16T11:00:00.000Z",
+        "citaSalida": "2025-06-23T08:55:00.000Z",
+        "citaDescarga": "2025-08-16T21:00:00.000Z",
+        "realSalidaUnidad": "2025-12-19T15:53",
+        "realCarga": "2025-12-19T15:54",
+        "realSalida": "2025-12-19T15:54",
+        "realDescarga": "2025-12-19T15:54",
+        "confirmacionEntrega": "SI",
+        "estatus": "Despacho realizado",
+        "incidencias": [
+            {
+                "tipo": "Sin contacto con el operador",
+                "severidad": "Naranja",
+                "fecha": "2025-12-19 21:54:17"
+            },
+            {
+                "tipo": "Ponchadura de llantas",
+                "severidad": "Naranja",
+                "fecha": "2025-12-19 21:57:11"
+            }
+        ],
+        "observaciones": "dasdasd",
+        "operadorMonitoreoId": "GEO-06",
+        "gpsValidacionEstado": "Operativo",
+        "gpsValidacionTimestamp": "2025-12-19 21:53:57"
+    }
+]

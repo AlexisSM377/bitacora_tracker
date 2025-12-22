@@ -5,7 +5,7 @@ ini_set('display_errors', 1);
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-    require 'db.php';
+    require_once __DIR__ . '/db.php';
     // Verificar método
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         throw new Exception("Método no permitido. Use POST.");
@@ -29,7 +29,26 @@ try {
     }
     
     // Preparar datos
-    $fecha_despacho = $data['fecha_despacho'] ?? date('Y-m-d');
+    $raw_fecha_despacho = $data['fecha_despacho'] ?? date('Y-m-d');
+
+    // Normalizar fecha para evitar duplicados por formato (acepta YYYY-MM-DD, DD-MM-YYYY, DD-MM-YY)
+    $fecha_despacho = (function ($value) {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return date('Y-m-d');
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{4})$/', $value, $m)) {
+            return $m[3] . '-' . $m[2] . '-' . $m[1];
+        }
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{2})$/', $value, $m)) {
+            return '20' . $m[3] . '-' . $m[2] . '-' . $m[1];
+        }
+        return $value;
+    })($raw_fecha_despacho);
+
     $total_despachos = intval($data['total_despachos'] ?? 0);
     $a_tiempo = intval($data['a_tiempo'] ?? 0);
     $con_retraso = intval($data['con_retraso'] ?? 0);
@@ -43,44 +62,106 @@ try {
         $datos_informe = json_encode($datos_informe, JSON_UNESCAPED_UNICODE);
     }
     
-    // Preparar consulta
-    $sql = "INSERT INTO informes_guardados 
-        (titulo, fecha_despacho, total_despachos, a_tiempo, con_retraso, en_ruta, programados, total_incidencias, datos_informe, operador_monitoreo) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    $stmt = $conn->prepare($sql);
-    
-    if (!$stmt) {
-        throw new Exception("Error en la preparación: " . $conn->error);
+    // Guardado idempotente por fecha_despacho: si existe, actualizar; si no, insertar.
+    $conn->begin_transaction();
+
+    $selectSql = "SELECT id FROM informes_guardados WHERE fecha_despacho = ? ORDER BY id DESC LIMIT 1";
+    $selectStmt = $conn->prepare($selectSql);
+    if (!$selectStmt) {
+        throw new Exception("Error en la preparación (select): " . $conn->error);
     }
-    
-    $stmt->bind_param("ssiiiiisss", 
-        $titulo, 
-        $fecha_despacho, 
-        $total_despachos, 
-        $a_tiempo, 
-        $con_retraso, 
-        $en_ruta, 
-        $programados, 
-        $total_incidencias, 
-        $datos_informe, 
-        $operador_monitoreo
-    );
-    
-    if ($stmt->execute()) {
-        $response = [
+    $selectStmt->bind_param("s", $fecha_despacho);
+    if (!$selectStmt->execute()) {
+        throw new Exception("Error al ejecutar (select): " . $selectStmt->error);
+    }
+    $existingId = null;
+    $selectResult = $selectStmt->get_result();
+    if ($selectResult && ($row = $selectResult->fetch_assoc())) {
+        $existingId = intval($row['id']);
+    }
+    $selectStmt->close();
+
+    if ($existingId) {
+        $updateSql = "UPDATE informes_guardados 
+            SET titulo = ?, total_despachos = ?, a_tiempo = ?, con_retraso = ?, en_ruta = ?, programados = ?, total_incidencias = ?, datos_informe = ?, operador_monitoreo = ?
+            WHERE id = ?";
+        $updateStmt = $conn->prepare($updateSql);
+        if (!$updateStmt) {
+            throw new Exception("Error en la preparación (update): " . $conn->error);
+        }
+
+        $updateStmt->bind_param(
+            "siiiiiissi",
+            $titulo,
+            $total_despachos,
+            $a_tiempo,
+            $con_retraso,
+            $en_ruta,
+            $programados,
+            $total_incidencias,
+            $datos_informe,
+            $operador_monitoreo,
+            $existingId
+        );
+
+        if (!$updateStmt->execute()) {
+            throw new Exception("Error al ejecutar (update): " . $updateStmt->error);
+        }
+
+        $updateStmt->close();
+        $conn->commit();
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Informe actualizado correctamente',
+            'action' => 'updated',
+            'id' => $existingId,
+            'fecha_despacho' => $fecha_despacho
+        ], JSON_UNESCAPED_UNICODE);
+    } else {
+        $insertSql = "INSERT INTO informes_guardados 
+            (titulo, fecha_despacho, total_despachos, a_tiempo, con_retraso, en_ruta, programados, total_incidencias, datos_informe, operador_monitoreo) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $insertStmt = $conn->prepare($insertSql);
+        if (!$insertStmt) {
+            throw new Exception("Error en la preparación (insert): " . $conn->error);
+        }
+
+        $insertStmt->bind_param(
+            "ssiiiiisss",
+            $titulo,
+            $fecha_despacho,
+            $total_despachos,
+            $a_tiempo,
+            $con_retraso,
+            $en_ruta,
+            $programados,
+            $total_incidencias,
+            $datos_informe,
+            $operador_monitoreo
+        );
+
+        if (!$insertStmt->execute()) {
+            throw new Exception("Error al ejecutar (insert): " . $insertStmt->error);
+        }
+
+        $newId = $insertStmt->insert_id;
+        $insertStmt->close();
+        $conn->commit();
+
+        echo json_encode([
             'success' => true,
             'message' => 'Informe guardado correctamente',
-            'id' => $stmt->insert_id
-        ];
-        echo json_encode($response, JSON_UNESCAPED_UNICODE);
-    } else {
-        throw new Exception("Error al ejecutar: " . $stmt->error);
+            'action' => 'inserted',
+            'id' => $newId,
+            'fecha_despacho' => $fecha_despacho
+        ], JSON_UNESCAPED_UNICODE);
     }
     
-    $stmt->close();
-    
 } catch (Exception $e) {
+    if (isset($conn) && $conn && method_exists($conn, 'rollback')) {
+        @$conn->rollback();
+    }
     http_response_code(500);
     echo json_encode([
         'success' => false,
